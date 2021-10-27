@@ -7,6 +7,8 @@ from plotly import graph_objs as go
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Output, Input, State, ALL 
 
+from queries import dummy 
+
 ######## WEB LAYOUT ########
 l = go.Layout(
     title={
@@ -14,7 +16,7 @@ l = go.Layout(
         'x': 0.5,
         'xanchor': 'center'
     },
-    showlegend=False,
+    showlegend=True,
     autosize=True,
     margin=dict(
         t=25,
@@ -26,11 +28,7 @@ l = go.Layout(
     clickmode='event',
 )
 
-#Xn, Yn, edges, titles, labels, ids = get_all_g()
-data = [] 
-last_id = None
-fig = go.Figure(data=data, layout=l)
-
+fig = go.Figure(data=[], layout=l)
 app = dash.Dash(
 	__name__, 
 	url_base_pathname='/graggle/'
@@ -39,6 +37,7 @@ app = dash.Dash(
 app.title = 'Stock Price Analyzer'
 app.layout = html.Div([     
     dcc.Store(id='memory'),
+    dcc.Store(id='graph-cache'),
 
     # Header
     html.Div([
@@ -118,8 +117,8 @@ app.layout = html.Div([
                 id='live-graph',
                 figure=fig, 
                 config={'scrollZoom': True, 'staticPlot': False}, 
-                animate=True,
-                animation_options={'frame': {'redraw': True}},
+                #animate=True,
+                #animation_options={'frame': {'redraw': True}},
                 style={
                     'width': '95%',
                     'height': 'calc(70vh - 50px)'
@@ -147,24 +146,114 @@ app.layout = html.Div([
 
 ######## CALLBACKS ########
 @app.callback(
-    Output('live-graph', 'figure'),
+    [
+        Output('live-graph', 'figure'),
+        Output('graph-cache', 'data')
+    ],
     Input({'type': 'derivatives', 'index': ALL}, 'value'),
     [
         State('live-graph', 'figure'),
-        State('memory', 'data')
+        State('memory', 'data'),
+        State('graph-cache', 'data')
     ],
     prevent_initial_call=True
 )
-def update_graph(values, figure, idx_map):
-    ctx = dash.callback_context.triggered[0]['prop_id']
+def update_graph(_, figure, mem, cached):
+    ctx = dash.callback_context.triggered
+    print('update_graph: ' + str(ctx))
+    print(mem)
 
-    pid = json.loads(ctx.split('.')[0])['index'] 
-    #ticker = idx_map[str(pid)]
+    if ctx[0]['prop_id'] == '.':
+        figure['data'] = []
+        return figure, None 
 
-    #print(ticker)
-    print(values)
+    cached = {} if cached is None else cached
+    data = {} if not cached else cached['data']
+    pids = [str(json.loads(child['prop_id'].split('.')[0])['index']) for child in ctx]
 
-    return figure
+    # Len is only greater than 1 if adding new stock
+    if len(pids) > 1:
+        print("Returning just the one")
+        return figure, cached 
+
+    # Adding a new or cached chart
+    values = [str(v) for v in ctx[0]['value']]
+    pid = pids[0]
+    
+    # Avoid duplicates and remove deleted series
+    new_dat = []
+    for d in figure['data']:
+        print(d['customdatasrc'])
+        if d['customdatasrc'] != pid and d['customdatasrc'] in mem['data']:
+            new_dat.append(d)
+
+    figure['data'] = new_dat
+
+    for v in values:
+        if pid not in data:
+            data[pid] = {}
+        if v not in data[pid]:
+            data[pid][v] = get_series(mem['data'][pid], v, pid)
+        
+        figure['data'].append(data[pid][v])
+    
+    # Sync pid cache and graph cache
+    cached_keys = list(data.keys())
+    for pid in cached_keys:
+        if pid not in mem['data']:
+            del data[pid]
+
+    cached['data'] = data
+
+    return {
+        'data': figure['data'], 
+        'layout': figure['layout']
+    }, cached 
+
+def get_series(ticker, deriv, pid):
+    x,y = dummy()
+    return go.Scatter(x=x, y=y, name=ticker + ':' + str(deriv), customdatasrc=pid)
+
+def remove_data(figure, mem, cached):
+    print(figure['data'])
+    return figure, cached # TODO
+
+@app.callback(
+    Output('memory', 'data'),
+    Input({'type': 'dynamic-delete', 'index': ALL}, 'n_clicks'),
+    [
+        State('memory', 'data'),
+        State('search-text', 'value')
+    ]
+)
+def update_memory(_, mem, ticker):
+    ctx = dash.callback_context.triggered
+    
+    # Final stock has been deleted
+    if ctx[0]['prop_id'] == '.':
+        return {'data': {}}
+
+    mem = mem or {'data': {}}
+
+    # If the id is not in the dict, it's new. Otherwise, we're deleting it
+    prop_ids = [str(json.loads(child['prop_id'].split('.')[0])['index']) for child in ctx]
+    data = mem['data']
+
+    # Delete button was clicked
+    if ctx[0]['value'] == 1:
+        del data[prop_ids[0]]
+        mem['data'] = data 
+        return mem
+
+    # New stock added
+    for pid in prop_ids:
+        if pid not in data:
+            data[pid] = ticker.upper()
+            break 
+    
+    mem['data'] = data 
+    return mem
+
 
 @app.callback(
     Output('stocks', 'children'),
@@ -174,17 +263,14 @@ def update_graph(values, figure, idx_map):
     ],
     [
         State('search-text', 'value'),
-        State('stocks', 'children'),
-        State('memory', 'data')
+        State('stocks', 'children')
     ],
     prevent_initial_call=True
 )
-def add_or_del_security(idx, d, text, children, mem):
+def add_or_del_security(idx, d, text, children):
     ctx = dash.callback_context.triggered[0]
     pid = ctx['prop_id']
     text = text.upper()
-
-    mem = mem or {}
 
     if pid == 'search-button.n_clicks' and text == '': 
         return []
@@ -193,17 +279,13 @@ def add_or_del_security(idx, d, text, children, mem):
         children = [] 
 
     if 'search' in pid:
-        print("children add_or_del: " + str(children))
-        mem[idx] = text
-        return add_new_stock(text, children, idx)#, mem
+        return add_new_stock(text, children, idx)
 
     else:
         idx = json.loads(pid.split('.')[0])['index']
-        #mem = {key:val for key,val in idx_map if val != d}
-        return delete_stock(idx, children)#, mem
+        return delete_stock(idx, children)
 
 def add_new_stock(ticker, component, idx):
-    print('add_new_stock:' + str(component))
     children = component or []
 
     new_div = html.Div([
@@ -234,11 +316,8 @@ def add_new_stock(ticker, component, idx):
     return children
 
 def delete_stock(d, children):
-    print("Searching for div with " + str(d))
-
     for i in range(len(children)):
         cn = children[i]['props']['id']['index']
-        print(cn)
 
         if cn == d:
             del children[i]

@@ -1,4 +1,5 @@
 import pandas as pd
+import torch 
 import yfinance as yf 
 
 def get_hist(ticker, period):
@@ -23,3 +24,6 @@ def first(ticker, period='max', delta=1):
 
     # Assume delta is in days
     #TODO 
+
+def dummy():
+    return torch.tensor([i for i in range(10)]).float().numpy(), (torch.rand((10))*10).numpy()
