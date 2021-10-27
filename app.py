@@ -1,6 +1,6 @@
 import dash
-from dash import dcc
-from dash import html
+import dash_core_components as dcc
+import dash_html_components as html
 import json 
 from plotly import graph_objs as go
 
@@ -26,121 +26,134 @@ l = go.Layout(
     ),
     hovermode='closest',
     clickmode='event',
+    paper_bgcolor='rgba(0,0,0,0)',
+    plot_bgcolor='rgba(0,0,0,0)',
+    font_color='white'
 )
 
 fig = go.Figure(data=[], layout=l)
 app = dash.Dash(
-	__name__, 
-	url_base_pathname='/graggle/'
+	__name__
 )
 
 app.title = 'Stock Price Analyzer'
-app.layout = html.Div([     
-    dcc.Store(id='memory'),
-    dcc.Store(id='graph-cache'),
+app.layout = html.Div(
+    [     
+        dcc.Store(id='memory'),
+        dcc.Store(id='graph-cache'),
 
-    # Header
-    html.Div([
-        html.H1(
-            'Stock Tools', 
-            style={
-                'margin-bottom': '0px'
-            }
-        )],
-        style={
-            'top': '0px',
-            'width': '100%',
-            'height': '75px',
-            'color': 'white',
-            'text-align': 'center',
-            'background': "linear-gradient(90deg, rgba(3,60,90,1) 0%, rgba(3,44,65,1) 100%)",
-            'padding-top': '10px',
-            'margin-top': '-20px',
-            'padding-bottom': '15px'
-        }
-    ),
-    
-    # Search bar
-    html.Div([
+        # Header
         html.Div([
-            dcc.Input(
-                id='search-text',
-                type='text',
-                placeholder='DDD, LWLG, CRSPR, ...',
-                value='',
-                debounce=True,
+            html.H1(
+                'Stock Tools', 
                 style={
-                    'display': 'inline-block',
-                    'width': '60%',
-                    'height': '30px',
-                    'border-radius': '10px',
-                    'margin-right': '5px',
-                    'font-size': '15px'
+                    'margin-bottom': '0px'
                 }
-            ),
-            html.Button(
-                'Search', 
-                id='search-button',
+            )],
+            style={
+                'top': '0px',
+                'width': '100%',
+                'height': '13vhpx',
+                'color': 'white',
+                'text-align': 'center',
+                'background': "linear-gradient(90deg, rgba(3,60,90,1) 0%, rgba(3,44,65,1) 100%)",
+                'padding-top': '10px',
+                'margin-top': '-20px',
+                'padding-bottom': '15px'
+            }
+        ),
+        
+        # Search bar
+        html.Div([
+            html.Div([
+                dcc.Input(
+                    id='search-text',
+                    type='text',
+                    placeholder='DDD, LWLG, CRSPR, ...',
+                    value='',
+                    debounce=True,
+                    style={
+                        'display': 'inline-block',
+                        'width': '60%',
+                        'height': '7vh',
+                        'border-radius': '10px',
+                        'margin-right': '5px',
+                        'font-size': '15px'
+                    }
+                ),
+                html.Button(
+                    'Search', 
+                    id='search-button',
+                    style={
+                        'display': 'inline-block',
+                        'border-radius': '4px',
+                        'height': '30px',
+                    }
+                ),
+                ],
                 style={
-                    'display': 'inline-block',
-                    'border-radius': '4px',
-                    'height': '30px',
+                    'width': '100%',
+                    'position': 'relative',
+                    'top': '50%',
+                    '-ms-transform': 'translateY(-50%)',
+                    'transform': 'translateY(-50%)'
                 }
             ),
             ],
             style={
+                'background': "linear-gradient(90deg, rgba(170,152,104,1) 0%, rgba(140,126,88,1) 100%)",
                 'width': '100%',
-                'position': 'relative',
-                'top': '50%',
-                '-ms-transform': 'translateY(-50%)',
-                'transform': 'translateY(-50%)'
+                'height': '60px',
+                'text-align': 'center',
             }
         ),
-        ],
-        style={
-            'background': "linear-gradient(90deg, rgba(170,152,104,1) 0%, rgba(140,126,88,1) 100%)",
-            'width': '100%',
-            'height': '60px',
-            'text-align': 'center',
-        }
-    ),
 
-    # Middle
-    html.Div([
-        'Securities:', 
-        # Where stocks will go 
-        html.Div(id='stocks'), 
+        # Middle
+        html.Div(
+            [
+                # Where stocks will go 
+                html.Div(
+                    id='stocks',
+                    style={ 
+                        'float': 'left',
+                        'width': '30%',
+                        'margin-left': 15,
+                        'height': '75vh',
+                        'overflow': 'overlay',
+                        'outline' : '2px dotted LightGray'
+                    }    
+                ), 
 
-        # Graph
-        html.Div([
-            dcc.Graph(
-                id='live-graph',
-                figure=fig, 
-                config={'scrollZoom': True, 'staticPlot': False}, 
-                #animate=True,
-                #animation_options={'frame': {'redraw': True}},
+                # Graph
+                html.Div([
+                    dcc.Graph(
+                        id='live-graph',
+                        figure=fig, 
+                        config={'scrollZoom': True, 'staticPlot': False}, 
+                        #animate=True,
+                        #animation_options={'frame': {'redraw': True}},
+                        style={
+                            'width': '95%',
+                            'height': '100%',
+                            'margin': 'auto'
+                        }
+                    )], 
                 style={
-                    'width': '95%',
-                    'height': 'calc(70vh - 50px)'
-                }
-            )], 
-        style={
-                'width': '65%',
-                'float': 'right',
-                'height': '80vh',
-                'text-align': 'center'
-        })    
-    ]),
-
-    # Otherwise dash has a hissy-fit
-    html.Button(
-        id='del-button',
-        style={'display': 'none'}
-    )
+                        'width': '65%',
+                        'float': 'right',
+                        'height': '75vh',
+                        'text-align': 'center'
+                })
+            ],
+            style={
+                'margin-top': '15px'
+            }
+        ),
     ], 
     style={
         'font-family': 'sans-serif',
-        'color': 'rgba(3,60,90,1)'
+        'color': 'white',
+        'height': '100vh'
     }
 )
 
@@ -289,7 +302,10 @@ def add_new_stock(ticker, component, idx):
     children = component or []
 
     new_div = html.Div([
-        html.P(ticker),
+        html.P(
+            ticker,
+            style={'text-align': 'center'}
+        ),
         dcc.Checklist(
                 id={'type': 'derivatives', 'index': idx},
                 options=[
@@ -297,19 +313,21 @@ def add_new_stock(ticker, component, idx):
                     {'label': 'd/dx', 'value': 1},
                     {'label': 'd^2/dx', 'value': 2}
                 ],
-                value=[]
+                value=[],
+                style={'text-align': 'center'}
         ), 
         html.Button(
             'Delete', 
-            id={'type': 'dynamic-delete', 'index': idx}
-        )], 
-        style={ 
-            'margin-left': 50, 
-            'float': 'left',
-            'width': '28%',
-            'margin-top': 15
-        },
-        id={'type': 'dynamic-div', 'index': idx}
+            id={'type': 'dynamic-delete', 'index': idx},
+            style={'width': '100%', 'margin': 'auto'}
+        )],
+        id={'type': 'dynamic-div', 'index': idx},
+        style={
+            'width': '90%',
+            'margin': 'auto',
+            'padding': '1% 5% 2.5% 5%',
+            'outline': '2px solid gray'
+}
     )
 
     children.append(new_div)
@@ -328,4 +346,4 @@ def delete_stock(d, children):
 
 ######## START EVERYTHING ########    
 if __name__ == '__main__':
-	app.run_server(debug=True, use_reloader=True, host='0.0.0.0', dev_tools_hot_reload=True)
+	app.run_server(debug=True, use_reloader=True, dev_tools_hot_reload=True)

@@ -1,5 +1,5 @@
+import numpy as np
 import pandas as pd
-import torch 
 import yfinance as yf 
 
 def get_hist(ticker, period):
@@ -26,4 +26,4 @@ def first(ticker, period='max', delta=1):
     #TODO 
 
 def dummy():
-    return torch.tensor([i for i in range(10)]).float().numpy(), (torch.rand((10))*10).numpy()
+    return np.array([i for i in range(10)], dtype=float), np.random.rand((10))*10
