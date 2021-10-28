@@ -11,20 +11,31 @@ def get_hist(ticker, period):
 
     return hist 
 
-def base(ticker, period='max', smooth=0):
+def base(ticker, period='1y', smooth=0):
     df = get_hist(ticker, period)['Close']
     return df.index, df.values
 
-def first(ticker, period='max', smooth=4):
+def first(ticker, base=None, period='1y', smooth=4):
     hist = get_hist(ticker, period)
     if hist is None:
         return hist 
 
-    offset = smooth*5
+    offset = max(1, int(smooth*5))
     open, close = hist['Open'].values, hist['Close'].values
     deriv = (close[offset:] - open[:-offset]) / open[:-offset]
 
     return hist.index[offset:], deriv
+
+def second(ticker, der=None, period='1y', smooth=4):
+    if der is None:
+        index, der = first(ticker, period=period, smooth=smooth)
+    else:
+        index, der = der.index, der.values
+
+    # TODO only plot zeros of 2nd der
+    offset = max(1, int(smooth*5))
+    return index[1:], der[offset:] - der[:-offset]
+    
 
 def smoothing(x, N):
     if N == 0:

@@ -1,8 +1,9 @@
 import dash
-import dash_core_components as dcc
-import dash_html_components as html
+from dash import dcc
+from dash import html
 import json 
 from plotly import graph_objs as go
+from plotly.subplots import make_subplots
 
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Output, Input, State, ALL 
@@ -22,16 +23,23 @@ l = go.Layout(
         t=25,
         b=0,
         l=0,
-        r=0
+        r=200
     ),
     hovermode='closest',
     clickmode='event',
     paper_bgcolor='rgba(0,0,0,0)',
     plot_bgcolor='rgba(0,0,0,0)',
-    font_color='white'
+    font_color='white',
+    yaxis={'side': 'left'},
+    yaxis2={
+        'gridcolor': '#444',
+        'zerolinecolor': '#4AF626',
+        'side': 'right'
+    }
 )
 
 fig = go.Figure(data=[], layout=l)
+fig = make_subplots(specs=[[{'secondary_y': True}]], figure=fig)
 app = dash.Dash(
 	__name__
 )
@@ -138,14 +146,14 @@ app.layout = html.Div(
                     value='4',
                     type='number',
                     style={
-                        'width': '20px',
+                        'width': '40px',
                         'background-color': 'gray',
                         'color': 'white',
                         'margin-left': '5px',
                         'margin-right': '5px',
                         'border-radius': '10px',
                     },
-                    debounce=True
+                    debounce=False
                 ),
                 html.P('weeks', style={'display': 'inline-block'})
             ],
@@ -178,18 +186,35 @@ app.layout = html.Div(
     ],
     prevent_initial_call=True
 )
-def update_graph(_, avg, figure, mem, cached):
+def update_graph(_, smooth, figure, mem, cached):
     ctx = dash.callback_context.triggered
     print('update_graph: ' + str(ctx))
     print(mem)
+
+    smooth = int(smooth)
 
     if ctx[0]['prop_id'] == '.':
         figure['data'] = []
         return figure, None 
 
     if ctx[0]['prop_id'] == 'rolling-avg.value':
-        #TODO
-        return figure, cached
+        dat = []
+        for series in figure['data']:
+            ticker, deriv = series['name'].split(':')
+            
+            # Only recalculate derivatives
+            if deriv != '0':
+                pid = series['customdatasrc']
+                series = get_series(ticker, deriv, pid, smooth)
+                cached['data'][pid][deriv] = series 
+
+            dat.append(series)
+        
+        return {
+            'data': dat,
+            'layout': figure['layout']
+        }, cached
+            
 
     cached = {} if cached is None else cached
     data = {} if not cached else cached['data']
@@ -217,7 +242,7 @@ def update_graph(_, avg, figure, mem, cached):
         if pid not in data:
             data[pid] = {}
         if v not in data[pid]:
-            series = get_series(mem['data'][pid], v, pid, int(avg))
+            series = get_series(mem['data'][pid], v, pid, smooth)
             
             if series: 
                 data[pid][v] = series
@@ -239,15 +264,22 @@ def update_graph(_, avg, figure, mem, cached):
         'layout': figure['layout']
     }, cached 
 
-def get_series(ticker, deriv, pid, avg):
+def get_series(ticker, deriv, pid, smooth):
     if deriv == '0':
         x,y = q.base(ticker)
     elif deriv == '1': 
-        x,y = q.first(ticker, smooth=avg)
+        x,y = q.first(ticker, smooth=smooth)
+    elif deriv == '2':
+        x,y = q.second(ticker, smooth=smooth)
     else:
         return None
     
-    return go.Scatter(x=x, y=y, name=ticker + ':' + str(deriv), customdatasrc=pid)
+    return go.Scatter(
+        x=x, y=y, 
+        name=ticker + ':' + str(deriv), 
+        customdatasrc=pid,
+        yaxis='y' if deriv=='0' else 'y2'
+    )
 
 
 @app.callback(
