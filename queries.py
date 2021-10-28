@@ -11,19 +11,27 @@ def get_hist(ticker, period):
 
     return hist 
 
-def base(ticker, period='max'):
-    return get_hist()['Close']
+def base(ticker, period='max', smooth=0):
+    df = get_hist(ticker, period)['Close']
+    return df.index, df.values
 
-def first(ticker, period='max', delta=1):
+def first(ticker, period='max', smooth=4):
     hist = get_hist(ticker, period)
     if hist is None:
         return hist 
 
-    if delta == 1:
-        return hist['Close'] - hist['Open'] 
+    offset = smooth*5
+    open, close = hist['Open'].values, hist['Close'].values
+    deriv = (close[offset:] - open[:-offset]) / open[:-offset]
 
-    # Assume delta is in days
-    #TODO 
+    return hist.index[offset:], deriv
+
+def smoothing(x, N):
+    if N == 0:
+        return x 
+
+    cumsum = np.cumsum(np.insert(x, 0, 0)) 
+    return (cumsum[N:] - cumsum[:-N]) / float(N)
 
 def dummy():
     return np.array([i for i in range(10)], dtype=float), np.random.rand((10))*10

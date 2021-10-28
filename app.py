@@ -7,7 +7,7 @@ from plotly import graph_objs as go
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Output, Input, State, ALL 
 
-from queries import dummy 
+import queries as q
 
 ######## WEB LAYOUT ########
 l = go.Layout(
@@ -41,27 +41,6 @@ app.layout = html.Div(
     [     
         dcc.Store(id='memory'),
         dcc.Store(id='graph-cache'),
-
-        # Header
-        html.Div([
-            html.H1(
-                'Stock Tools', 
-                style={
-                    'margin-bottom': '0px'
-                }
-            )],
-            style={
-                'top': '0px',
-                'width': '100%',
-                'height': '13vhpx',
-                'color': 'white',
-                'text-align': 'center',
-                'background': "linear-gradient(90deg, rgba(3,60,90,1) 0%, rgba(3,44,65,1) 100%)",
-                'padding-top': '10px',
-                'margin-top': '-20px',
-                'padding-bottom': '15px'
-            }
-        ),
         
         # Search bar
         html.Div([
@@ -75,7 +54,7 @@ app.layout = html.Div(
                     style={
                         'display': 'inline-block',
                         'width': '60%',
-                        'height': '7vh',
+                        'height': '30px',
                         'border-radius': '10px',
                         'margin-right': '5px',
                         'font-size': '15px'
@@ -101,7 +80,6 @@ app.layout = html.Div(
             ),
             ],
             style={
-                'background': "linear-gradient(90deg, rgba(170,152,104,1) 0%, rgba(140,126,88,1) 100%)",
                 'width': '100%',
                 'height': '60px',
                 'text-align': 'center',
@@ -137,7 +115,8 @@ app.layout = html.Div(
                             'height': '100%',
                             'margin': 'auto'
                         }
-                    )], 
+                    ), 
+                ], 
                 style={
                         'width': '65%',
                         'float': 'right',
@@ -149,6 +128,31 @@ app.layout = html.Div(
                 'margin-top': '15px'
             }
         ),
+
+        # Footer tools
+        html.Div(
+            [
+                html.P('Derivative Delta Size: ', style={'display': 'inline-block'}),
+                dcc.Input(
+                    id='rolling-avg',
+                    value='4',
+                    type='number',
+                    style={
+                        'width': '20px',
+                        'background-color': 'gray',
+                        'color': 'white',
+                        'margin-left': '5px',
+                        'margin-right': '5px',
+                        'border-radius': '10px',
+                    },
+                    debounce=True
+                ),
+                html.P('weeks', style={'display': 'inline-block'})
+            ],
+            style={
+                'width': '100%',
+            }
+        )
     ], 
     style={
         'font-family': 'sans-serif',
@@ -163,7 +167,10 @@ app.layout = html.Div(
         Output('live-graph', 'figure'),
         Output('graph-cache', 'data')
     ],
-    Input({'type': 'derivatives', 'index': ALL}, 'value'),
+    [
+        Input({'type': 'derivatives', 'index': ALL}, 'value'),
+        Input('rolling-avg', 'value')
+    ],
     [
         State('live-graph', 'figure'),
         State('memory', 'data'),
@@ -171,7 +178,7 @@ app.layout = html.Div(
     ],
     prevent_initial_call=True
 )
-def update_graph(_, figure, mem, cached):
+def update_graph(_, avg, figure, mem, cached):
     ctx = dash.callback_context.triggered
     print('update_graph: ' + str(ctx))
     print(mem)
@@ -179,6 +186,10 @@ def update_graph(_, figure, mem, cached):
     if ctx[0]['prop_id'] == '.':
         figure['data'] = []
         return figure, None 
+
+    if ctx[0]['prop_id'] == 'rolling-avg.value':
+        #TODO
+        return figure, cached
 
     cached = {} if cached is None else cached
     data = {} if not cached else cached['data']
@@ -206,7 +217,12 @@ def update_graph(_, figure, mem, cached):
         if pid not in data:
             data[pid] = {}
         if v not in data[pid]:
-            data[pid][v] = get_series(mem['data'][pid], v, pid)
+            series = get_series(mem['data'][pid], v, pid, int(avg))
+            
+            if series: 
+                data[pid][v] = series
+            else: 
+                print("Something went wrong; series %s, %s returned NULL" % (mem['data'][pid], v))
         
         figure['data'].append(data[pid][v])
     
@@ -223,13 +239,16 @@ def update_graph(_, figure, mem, cached):
         'layout': figure['layout']
     }, cached 
 
-def get_series(ticker, deriv, pid):
-    x,y = dummy()
+def get_series(ticker, deriv, pid, avg):
+    if deriv == '0':
+        x,y = q.base(ticker)
+    elif deriv == '1': 
+        x,y = q.first(ticker, smooth=avg)
+    else:
+        return None
+    
     return go.Scatter(x=x, y=y, name=ticker + ':' + str(deriv), customdatasrc=pid)
 
-def remove_data(figure, mem, cached):
-    print(figure['data'])
-    return figure, cached # TODO
 
 @app.callback(
     Output('memory', 'data'),
@@ -272,12 +291,10 @@ def update_memory(_, mem, ticker):
     Output('stocks', 'children'),
     [
         Input('search-button', 'n_clicks'),
-        Input({'type': 'dynamic-delete', 'index': ALL}, 'n_clicks')
+        Input({'type': 'dynamic-delete', 'index': ALL}, 'n_clicks'),
+        State('search-text', 'value')
     ],
-    [
-        State('search-text', 'value'),
-        State('stocks', 'children')
-    ],
+    State('stocks', 'children'),
     prevent_initial_call=True
 )
 def add_or_del_security(idx, d, text, children):
