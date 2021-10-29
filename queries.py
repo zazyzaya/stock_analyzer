@@ -13,6 +13,10 @@ def get_hist(ticker, period):
 
 def base(ticker, period):
     df = get_hist(ticker, period)
+
+    if df is None:
+        return None 
+
     return df.index, df['Close'].values, df['Open'].values
 
 def first(idx, close, open, smooth):
@@ -34,11 +38,19 @@ def second(idx, deriv, smooth):
     return [idx[offset:], (deriv[offset:] - deriv[:-offset]) ]
 
 def find_zeros(idx, series, cutoff=0.05):
+    if not type(idx) is np.ndarray:
+        series = np.array(series)
+        idx = np.array(idx)
+
     gt = series>0
     zero_days = np.logical_xor(gt[1:], gt[:-1])
-
     idx = idx[1:][zero_days]
+
+    # Normalize between 0 and 1
     magnitudes = series[1:][zero_days] - series[:-1][zero_days]
+    magnitudes = magnitudes - magnitudes.min() / (magnitudes.max() - magnitudes.min())
+    magnitudes -= 0.5
+    magnitudes *= 2
 
     annotations = []
     for i in range(idx.shape[0]):
@@ -66,7 +78,11 @@ def find_zeros(idx, series, cutoff=0.05):
     return annotations
 
 def get_all(ticker, period='1y', smooth=4):
-    idx, o, c = base(ticker, period)
+    ret = base(ticker, period)
+    if ret is None:
+        return None
+
+    idx, o, c = ret 
     d_idx, deriv = first(idx, c, o, smooth)
     dd_idx, dderiv = second(d_idx, deriv, smooth)
 

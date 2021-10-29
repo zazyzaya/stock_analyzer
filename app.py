@@ -13,8 +13,7 @@ import queries as q
 ######## WEB LAYOUT ########
 l = go.Layout(
     title={
-        'text': 'Price Comparison',
-        'x': 0.5,
+        'text': '',
         'xanchor': 'center'
     },
     showlegend=True,
@@ -23,7 +22,7 @@ l = go.Layout(
         t=25,
         b=0,
         l=0,
-        r=200
+        r=25
     ),
     hovermode='closest',
     clickmode='event',
@@ -172,7 +171,9 @@ app.layout = html.Div(
                         labelStyle={'display': 'inline-block'},
                         value=''
                     )
-                ])
+                ],
+                style={'display': 'inline-block'}
+                )
             ],
             style={
                 'width': '100%',
@@ -256,14 +257,19 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
             to_update[ticker].append(deriv)
     
         for ticker, derivs in to_update.items():
-            data[ticker][1] = q.first(*data[ticker][0], smooth)
-            data[ticker][2] = q.second(*data[ticker][1], smooth)
-            data[ticker][3] = q.find_zeros(*data[ticker][2])
+            # Only update valid stocks
+            if data[ticker][0]:
+                data[ticker][1] = q.first(*data[ticker][0], smooth)
+                data[ticker][2] = q.second(*data[ticker][1], smooth)
+                data[ticker][3] = q.find_zeros(*data[ticker][2])
 
-            fig_dat += [
-                get_series(data[ticker][int(i)], ticker, i) 
-                for i in derivs if i < 3
-            ]
+                fig_dat += [
+                    get_series(data[ticker][int(i)], ticker, i) 
+                    for i in derivs if int(i) < 3
+                ]
+                
+                if last_forecast['data'] == ticker:
+                    figure['layout']['annotations'] = data[ticker][3]
 
         return {
             'data': fig_dat,
@@ -275,8 +281,15 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
 
     # Len is only greater than 1 if adding new stock
     if len(pids) > 1:
-        print("Returning just the one")
-        return figure, cached 
+        for pid in pids:
+            if pid not in data:
+                to_cache = q.get_all(pid, smooth=smooth)
+                if to_cache is None:
+                    data[pid] = [[[],[]] * 3, []]
+                else:
+                    data[pid] = to_cache 
+
+        return figure, cached, last_forecast
 
     # Adding a new or cached chart
     values = [str(v) for v in ctx[0]['value']]
@@ -293,7 +306,11 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
 
     # Query yfinance if this is the first time seeing ticker
     if ticker not in data:
-        data[ticker] = q.get_all(ticker, smooth=smooth)
+        to_cache = q.get_all(ticker, smooth=smooth)
+        if to_cache is None:
+            data[ticker] = [[[],[]] * 3, []]
+        else:
+            data[ticker] = to_cache 
 
     for v in values:
         if v != '3':
