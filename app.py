@@ -5,6 +5,7 @@ import json
 from plotly import graph_objs as go
 from plotly.subplots import make_subplots
 
+from datetime import datetime as dt 
 from dash.exceptions import PreventUpdate
 from dash.dependencies import Output, Input, State, ALL 
 
@@ -209,38 +210,38 @@ app.layout = html.Div(
 )
 def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
     ctx = dash.callback_context.triggered
-    print('update_graph: ' + str(ctx))
-    print(mem)
+
+    if smooth is None:
+        return figure, cached, last_forecast
 
     smooth = int(smooth)
-    cached = {} if cached is None else cached
-    data = {} if not cached else cached['data']
-    last_forecast = {'data': ''} if not last_forecast else last_forecast
+    cached = dict() if cached is None else cached
+    last_forecast = '' if last_forecast is None else last_forecast
 
     if ctx[0]['prop_id'] == '.':
         figure['data'] = []
         figure['layout']['annotations'] = []
-        return figure, None, {'data': ''}
+        return {'data': figure['data'], 'layout': figure['layout']}, dict(), ''
 
+    # Update forecast
     if ctx[0]['prop_id'] == 'forecast.value':
-        if not forecast:
+        if forecast == '':
             figure['layout']['annotations'] = []
             return {
                 'data': figure['data'],
                 'layout': figure['layout']
-            }, cached, {'data': ''}
+            }, cached, ''
 
-        fc = forecast
-        if fc not in data:
-            data[fc] = q.get_all(fc, smooth=smooth)
-            cached['data'] = data 
+        if forecast not in cached:
+            print("Generating data for %s" % forecast)
+            cached[forecast] = q.get_all(forecast, smooth=smooth)
+            #cached['data'] = data 
 
-        figure['layout']['annotations'] = data[fc][3]
+        figure['layout']['annotations'] = cached[forecast][3][:10]
         return {
             'data': figure['data'],
             'layout': figure['layout']
-        }, cached, {'data': fc}
-        
+        }, cached, forecast
 
     # Update smoothing on derivatives
     if ctx[0]['prop_id'] == 'rolling-avg.value':
@@ -248,7 +249,6 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
 
         to_update = {}
         for series in figure['data']:
-            print(series['name'])
             ticker, deriv = series['name'].split(':')
             
             if ticker not in to_update:
@@ -258,18 +258,18 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
     
         for ticker, derivs in to_update.items():
             # Only update valid stocks
-            if data[ticker][0]:
-                data[ticker][1] = q.first(*data[ticker][0], smooth)
-                data[ticker][2] = q.second(*data[ticker][1], smooth)
-                data[ticker][3] = q.find_zeros(*data[ticker][2])
+            if cached[ticker][0]:
+                cached[ticker][1] = q.first(*cached[ticker][0], smooth)
+                cached[ticker][2] = q.second(*cached[ticker][1], smooth)
+                cached[ticker][3] = q.find_zeros(*cached[ticker][2])
 
                 fig_dat += [
-                    get_series(data[ticker][int(i)], ticker, i) 
+                    get_series(cached[ticker][int(i)], ticker, i) 
                     for i in derivs if int(i) < 3
                 ]
                 
-                if last_forecast['data'] == ticker:
-                    figure['layout']['annotations'] = data[ticker][3]
+                if last_forecast == ticker:
+                    figure['layout']['annotations'] = cached[ticker][3]
 
         return {
             'data': fig_dat,
@@ -282,12 +282,12 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
     # Len is only greater than 1 if adding new stock
     if len(pids) > 1:
         for pid in pids:
-            if pid not in data:
+            if pid not in cached:
                 to_cache = q.get_all(pid, smooth=smooth)
                 if to_cache is None:
-                    data[pid] = [[[],[]] * 3, []]
+                    cached[pid] = [[[],[]] * 3, []]
                 else:
-                    data[pid] = to_cache 
+                    cached[pid] = to_cache 
 
         return figure, cached, last_forecast
 
@@ -305,28 +305,26 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
     figure['data'] = new_dat
 
     # Query yfinance if this is the first time seeing ticker
-    if ticker not in data:
+    if ticker not in cached:
         to_cache = q.get_all(ticker, smooth=smooth)
         if to_cache is None:
-            data[ticker] = [[[],[]] * 3, []]
+            cached[ticker] = [[[],[]] * 3, []]
         else:
-            data[ticker] = to_cache 
+            cached[ticker] = to_cache 
 
     for v in values:
         if v != '3':
-            series = get_series(data[ticker][int(v)], ticker, v)
+            series = get_series(cached[ticker][int(v)], ticker, v)
             figure['data'].append(series)
     
     # Sync pid cache and graph cache
-    cached_keys = list(data.keys())
+    cached_keys = list(cached.keys())
     for ticker in cached_keys:
         if ticker not in mem['data']:
-            del data[ticker]
-            if ticker == last_forecast['data']:
+            del cached[ticker]
+            if ticker == last_forecast:
                 figure['layout']['annotations'] = []
-                last_forecast = {'data': ''}
-
-    cached['data'] = data
+                last_forecast = ''
 
     return {
         'data': figure['data'], 
@@ -373,8 +371,6 @@ def update_forecast_options(mem, options):
 )
 def update_memory(_, mem, ticker):
     ctx = dash.callback_context.triggered
-    print("update_memory: " + str(ctx))
-    print(ticker)
 
     # Final stock has been deleted
     if ctx[0]['prop_id'] == '.':

@@ -23,6 +23,7 @@ def first(idx, close, open, smooth):
     if not type(close) is np.ndarray:
         close = np.array(close)
         open = np.array(open) 
+        idx = np.array(idx, dtype='datetime64')
 
     offset = max(1, int(smooth*5))
     deriv = (close[offset:] - open[:-offset]) / open[:-offset]
@@ -38,9 +39,8 @@ def second(idx, deriv, smooth):
     return [idx[offset:], (deriv[offset:] - deriv[:-offset]) ]
 
 def find_zeros(idx, series, cutoff=0.05):
-    if not type(idx) is np.ndarray:
+    if not type(series) is np.ndarray:
         series = np.array(series)
-        idx = np.array(idx)
 
     gt = series>0
     zero_days = np.logical_xor(gt[1:], gt[:-1])
