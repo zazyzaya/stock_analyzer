@@ -1,44 +1,61 @@
 import dash
 from dash import dcc
 from dash import html
+from dash.exceptions import PreventUpdate
 import json 
+import pandas as pd
 from plotly import graph_objs as go
 from plotly.subplots import make_subplots
 
 from datetime import datetime as dt 
-from dash.exceptions import PreventUpdate
 from dash.dependencies import Output, Input, State, ALL 
 
 import queries as q
+from time_slicing import get_delta
+from time_slicing import ALL_Y, FIVE_Y, ONE_Y, THREE_M, ONE_M, ONE_W
 
 ######## WEB LAYOUT ########
-l = go.Layout(
-    title={
-        'text': '',
-        'xanchor': 'center'
-    },
-    showlegend=True,
-    autosize=True,
-    margin=dict(
-        t=25,
-        b=0,
-        l=0,
-        r=25
-    ),
-    hovermode='closest',
-    clickmode='event',
-    paper_bgcolor='rgba(0,0,0,0)',
-    plot_bgcolor='rgba(0,0,0,0)',
-    font_color='white',
-    yaxis={'side': 'left'},
-    yaxis2={
-        'gridcolor': '#444',
-        'zerolinecolor': '#4AF626',
-        'side': 'right'
-    }
-)
+def base_layout():
+    return go.Layout(
+        title={
+            'text': '',
+            'xanchor': 'center'
+        },
+        showlegend=True,
+        autosize=True,
+        margin=dict(
+            t=25,
+            b=0,
+            l=0,
+            r=25
+        ),
+        hovermode='closest',
+        clickmode='event',
+        paper_bgcolor='rgba(0,0,0,0)',
+        plot_bgcolor='rgba(0,0,0,0)',
+        font_color='white',
+        xaxis={
+            'gridcolor': '#444',
+            'showgrid': True,
+            'zeroline': False
+        },
+        yaxis={
+            'side': 'left', 'showgrid': False, 
+            'linecolor': 'rgba(0,0,0,0)',
+            'zeroline': False,
+            'showline': False
+        },
+        yaxis2={
+            'showgrid': False,
+            'side': 'right',
+            'zeroline': True,
+            'showline': False,
+            'zerolinecolor': '#4AF626',
+        },
+        annotations=[]
+    )
 
-fig = go.Figure(data=[], layout=l)
+fig = go.Figure(data=[], layout=base_layout())
 fig = make_subplots(specs=[[{'secondary_y': True}]], figure=fig)
 app = dash.Dash(
 	__name__
@@ -116,7 +133,11 @@ app.layout = html.Div(
                     dcc.Graph(
                         id='live-graph',
                         figure=fig, 
-                        config={'scrollZoom': True, 'staticPlot': False}, 
+                        config={
+                            'scrollZoom': False, 
+                            'staticPlot': False,
+                            'displayModeBar': False
+                        }, 
                         #animate=True,
                         #animation_options={'frame': {'redraw': True}},
                         style={
@@ -174,7 +195,22 @@ app.layout = html.Div(
                     )
                 ],
                 style={'display': 'inline-block'}
-                )
+                ), 
+                html.Div([
+                    dcc.Slider(
+                        min=0, max=100, step=None,
+                        marks={
+                            ALL_Y: 'All', 
+                            FIVE_Y: '5y',
+                            ONE_Y: '1y',
+                            THREE_M: '3mo',
+                            ONE_M: '1mo',
+                            ONE_W: '1w'
+                        },
+                        value=ONE_Y,
+                        id='date_range'
+                    )
+                ])
             ],
             style={
                 'width': '100%',
@@ -198,7 +234,8 @@ app.layout = html.Div(
     [
         Input({'type': 'derivatives', 'index': ALL}, 'value'),
         Input('rolling-avg', 'value'),
-        Input('forecast', 'value')
+        Input('forecast', 'value'),
+        Input('date_range', 'value')
     ],
     [
         State('live-graph', 'figure'),
@@ -208,15 +245,40 @@ app.layout = html.Div(
     ],
     prevent_initial_call=True
 )
-def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
+def update_graph(_, smooth, forecast, date_range, figure, mem, cached, last_forecast):
     ctx = dash.callback_context.triggered
 
+    print(str(ctx))
     if smooth is None:
         return figure, cached, last_forecast
 
     smooth = int(smooth)
+    date_range = int(date_range)
     cached = dict() if cached is None else cached
     last_forecast = '' if last_forecast is None else last_forecast
+
+    if 'date_range' in ctx[0]['prop_id']:
+        if len(cached) == 0:
+            raise PreventUpdate
+        else:
+            fig_data = []
+
+            # Update lines plotted
+            for ticker, series in cached.items():
+                derivs = series[3]
+                
+                for d in derivs:
+                    fig_data.append(
+                        get_series(series[d], ticker, d, date_range)
+                    )
+
+            # Update arrows (if any)
+            if last_forecast:
+                figure['layout']['annotations'] = get_arrows(cached[forecast][2], date_range)        
+
+            return \
+                {'data': fig_data, 'layout': figure['layout']}, \
+                dash.no_update, dash.no_update
 
     if ctx[0]['prop_id'] == '.':
         figure['data'] = []
@@ -234,10 +296,9 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
 
         if forecast not in cached:
             print("Generating data for %s" % forecast)
-            cached[forecast] = q.get_all(forecast, smooth=smooth)
-            #cached['data'] = data 
+            cached[forecast] = q.get_all(forecast, smooth=smooth) + [[]]
 
-        figure['layout']['annotations'] = cached[forecast][3][:10]
+        figure['layout']['annotations'] = get_arrows(cached[forecast][2], date_range)
         return {
             'data': figure['data'],
             'layout': figure['layout']
@@ -261,15 +322,14 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
             if cached[ticker][0]:
                 cached[ticker][1] = q.first(*cached[ticker][0], smooth)
                 cached[ticker][2] = q.second(*cached[ticker][1], smooth)
-                cached[ticker][3] = q.find_zeros(*cached[ticker][2])
 
                 fig_dat += [
-                    get_series(cached[ticker][int(i)], ticker, i) 
-                    for i in derivs if int(i) < 3
+                    get_series(cached[ticker][int(i)], ticker, i, date_range) 
+                    for i in derivs
                 ]
                 
                 if last_forecast == ticker:
-                    figure['layout']['annotations'] = cached[ticker][3]
+                    figure['layout']['annotations'] = get_arrows(cached[ticker][2], date_range)
 
         return {
             'data': fig_dat,
@@ -287,7 +347,7 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
                 if to_cache is None:
                     cached[pid] = [[[],[]] * 3, []]
                 else:
-                    cached[pid] = to_cache 
+                    cached[pid] = to_cache + [[]]
 
         return figure, cached, last_forecast
 
@@ -310,12 +370,16 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
         if to_cache is None:
             cached[ticker] = [[[],[]] * 3, []]
         else:
-            cached[ticker] = to_cache 
+            cached[ticker] = to_cache + [[]]
 
     for v in values:
-        if v != '3':
-            series = get_series(cached[ticker][int(v)], ticker, v)
-            figure['data'].append(series)
+        series = get_series(cached[ticker][int(v)], ticker, v, date_range)
+        figure['data'].append(series)
+
+    # Keeps track of which derivatives are displayed
+    print(ticker)
+    print(len(cached[ticker]))
+    cached[ticker][3] = [int(v) for v in values]
     
     # Sync pid cache and graph cache
     cached_keys = list(cached.keys())
@@ -331,16 +395,29 @@ def update_graph(_, smooth, forecast, figure, mem, cached, last_forecast):
         'layout': figure['layout']
     }, cached, last_forecast
 
-def get_series(xy, ticker, deriv):
+def get_arrows(second_d, span):
+    start = get_delta(span)
+    return q.find_zeros(*second_d, time_cutoff=start)
+
+def get_series(xy, ticker, deriv, span):
     #if deriv == '3':
     #    fig['layout']['annotatons'] = xy
 
     x,y = xy[0], xy[1]
+    start = get_delta(span)
+
+    # Cant trust dataframes to stay that datatype
+    # have to convert back every time :(
+    if start != None:
+        df = pd.DataFrame({'y':y}, index=pd.to_datetime(x))
+        sliced = df[start:]
+        x, y = sliced.index, sliced['y'].array
+
     return go.Scatter(
         x=x, y=y, 
-        name=ticker + ':' + deriv, 
+        name=ticker + ':' + str(deriv), 
         customdatasrc=ticker,
-        yaxis='y' if deriv=='0' else 'y2'
+        yaxis='y' if int(deriv)==0 else 'y2'
     )
 
 
