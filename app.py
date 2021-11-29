@@ -248,7 +248,6 @@ app.layout = html.Div(
 def update_graph(_, smooth, forecast, date_range, figure, mem, cached, last_forecast):
     ctx = dash.callback_context.triggered
 
-    print(str(ctx))
     if smooth is None:
         return figure, cached, last_forecast
 
@@ -295,7 +294,6 @@ def update_graph(_, smooth, forecast, date_range, figure, mem, cached, last_fore
             }, cached, ''
 
         if forecast not in cached:
-            print("Generating data for %s" % forecast)
             cached[forecast] = q.get_all(forecast, smooth=smooth) + [[]]
 
         figure['layout']['annotations'] = get_arrows(cached[forecast][2], date_range)
@@ -358,7 +356,6 @@ def update_graph(_, smooth, forecast, date_range, figure, mem, cached, last_fore
     # Avoid duplicates and remove deleted series
     new_dat = []
     for d in figure['data']:
-        print(d['customdatasrc'])
         if d['customdatasrc'] != ticker and d['customdatasrc'] in mem['data']:
             new_dat.append(d)
 
@@ -377,8 +374,6 @@ def update_graph(_, smooth, forecast, date_range, figure, mem, cached, last_fore
         figure['data'].append(series)
 
     # Keeps track of which derivatives are displayed
-    print(ticker)
-    print(len(cached[ticker]))
     cached[ticker][3] = [int(v) for v in values]
     
     # Sync pid cache and graph cache
@@ -472,7 +467,6 @@ def update_memory(_, mem, ticker):
             break 
     
     mem['data'] = data 
-    print("update_memory out: " + str(mem))
     return mem, ''
 
 
@@ -559,4 +553,8 @@ def delete_stock(ticker, children):
 
 ######## START EVERYTHING ########    
 if __name__ == '__main__':
-	app.run_server(debug=True, use_reloader=True, dev_tools_hot_reload=True)
+    # Debug mode
+	# app.run_server(debug=True, use_reloader=True, dev_tools_hot_reload=True)
+
+    # Production mode
+    app.run_server()
