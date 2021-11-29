@@ -60,6 +60,7 @@ fig = make_subplots(specs=[[{'secondary_y': True}]], figure=fig)
 app = dash.Dash(
 	__name__
 )
+server = app.server 
 
 app.title = 'Stock Price Analyzer'
 app.layout = html.Div(
